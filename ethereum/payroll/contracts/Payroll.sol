@@ -4,14 +4,14 @@ import "./PayrollInterface.sol";
 
 contract Payroll is PayrollInterface {
     
-	address owner;  // contract owner address
+    address owner;  // contract owner address
 	
-	address oracle;  // authorised oracle address
+    address oracle;  // authorised oracle address
 
     uint256 totalAnnualSalariesEUR;
 
 
-	/** Employee */
+    /** Employee */
 	
     struct Employee {
     	address accountAddress;  // employee Ether aaccount
@@ -29,27 +29,27 @@ contract Payroll is PayrollInterface {
     mapping (address => uint256) employeeIds;  // mapping of the employee address to the employee array index
 
         
-	/** Tokens */
+    /** Tokens */
 	
-	struct Token {
+    struct Token {
         address tokenAddress;  // address of the ERC20 token contract
         uint256 exchangeRateEUR;  // token to EUR exchange rate
     }
     
     Token[] tokens;
 	
-	mapping(address => uint256) tokenIds;  // mapping of the token address to the token array index
+    mapping(address => uint256) tokenIds;  // mapping of the token address to the token array index
 
 	
-	/** Constructors */
+    /** Constructors */
 	
-	function Payroll(address _oracle) public {
+    function Payroll(address _oracle) public {
         owner = msg.sender;
         oracle = _oracle;
     }
     
 	
-	/** Modifiers */
+    /** Modifiers */
 
     modifier ifOwner() {
     	require(msg.sender == owner);
@@ -73,11 +73,10 @@ contract Payroll is PayrollInterface {
         address accountAddress, 
         address[] allowedTokens, 
         uint256 initialYearlyEURSalary
-	) public ifOwner returns(uint256 employeeId) {
+    ) public ifOwner returns(uint256 employeeId) {
+        require(initialYearlyUSDSalary > 0);
 	
-		require(initialYearlyUSDSalary > 0);
-	
-		// validate all the tokens are allowed
+	// validate all the tokens are allowed
 		
         for (uint i = 0; i < allowedTokens.length; i++) {
             require(tokenIds[allowedTokens[i]] > 0);
@@ -104,15 +103,15 @@ contract Payroll is PayrollInterface {
     
     function _updateTotalAnnualSalaries(
         uint256 currentSalaryEUR,
-        uint256 newSalaryEUR) internal {
-
+        uint256 newSalaryEUR
+    ) internal {
         totalAnnualSalariesEUR += newSalaryEUR - currentSalaryEUR;
     }
 
     function _updateEmployeeSalary(
         uint256 employeeId,
-        uint256 newSalaryEUR) internal {
-
+        uint256 newSalaryEUR
+    ) internal {
         Employee storage emp = employees[employeeId];
         _updateTotalYearlySalaries(emp.annualSalaryEUR, newSalaryEUR);
         emp.annualSalaryEUR = newSalaryEUR;
@@ -122,7 +121,6 @@ contract Payroll is PayrollInterface {
         uint256 employeeId, 
         uint256 yearlyEURSalary
     ) public ifOwner {
-
         require(yearlyEURSalary > 0);
 
         _updateEmployeeSalary(employeeId, yearlyEURSalary);
