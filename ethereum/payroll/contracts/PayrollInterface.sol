@@ -1,9 +1,9 @@
 pragma solidity ^0.4.17;
 
-// For the sake of simplicity lets assume ETHER is the default token for the payment, 
-// Also lets assume we can 100% trust the exchange rate oracle returns
+// Assume we can 100% trust the exchange rate oracle returns
 
 contract PayrollInterface {
+
 
     /* OWNER ONLY */
 
@@ -30,7 +30,8 @@ contract PayrollInterface {
     function calculatePayrollBurnrate() public constant returns(uint256); // Monthly EUR amount spent in salaries 
     
     function calculatePayrollRunway() public constant returns(uint256); // Days until the contract can run out of funds 
-    
+
+
     /* EMPLOYEE ONLY */ 
     
     function determineAllocation(
@@ -40,6 +41,7 @@ contract PayrollInterface {
 
     function payday() public; // only callable once a month
 
+
     /* ORACLE ONLY */ 
     
     function setExchangeRate(
@@ -47,9 +49,10 @@ contract PayrollInterface {
       uint256 EURExchangeRate
     ) public; // uses decimals from token
 
-	/* Escape Hatch */
 
-	// TODO if time permitted
+	  /* Escape Hatch */
+
+	  // TODO if time permitted
     //function escapeHatch(bool escapeHatchInd) public;
 
 }
