@@ -50,9 +50,9 @@ contract PayrollInterface {
     ) public; // uses decimals from token
 
 
-	  /* Escape Hatch */
+    /* Escape Hatch */
 
-	  // TODO if time permitted
+    // TODO if time permitted
     //function escapeHatch(bool escapeHatchInd) public;
 
 }
