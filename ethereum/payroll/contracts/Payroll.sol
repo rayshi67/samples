@@ -5,8 +5,6 @@ import "./PayrollInterface.sol";
 contract Payroll is PayrollInterface {
     
     address owner;  // contract owner address
-	
-    address oracle;  // authorised oracle address
 
     uint256 totalAnnualSalariesEUR;
 
@@ -14,12 +12,16 @@ contract Payroll is PayrollInterface {
     /** Employee */
 	
     struct Employee {
-    	address accountAddress;  // employee Ether aaccount
-    	address[] allowedTokens;  // ERC20 token contract addresses employee uses to receive the payment
+    	address accountAddress;  // employee address
+    	bool active;
+    	mapping(address => bool) allowedTokens;  // token contract addresses employee is allowed to have
+      	uint256 lastAllocationDay;  // timestamp for last time employee changes pay distribution
       	uint256 lastPayDay;  // timestamp for last time employee gets paid
+      	address[] distributionTokenList;
+        uint256[] distributionInPercentageList;
       	uint256 annualSalaryEUR;  // annual salary in EUR
     }
-    
+
     Employee[] employees;
     
     uint256 lastEmployeeId = 0;  // the last employee ID
@@ -31,39 +33,44 @@ contract Payroll is PayrollInterface {
         
     /** Tokens */
 	
-    struct Token {
-        address tokenAddress;  // address of the ERC20 token contract
+	// For the sake of simplicity lets assume EUR is a ERC20 token 
+	address tokenEUR;
+	
+    struct TokenExchange {
+        address token;  // ERC20 token address
         uint256 exchangeRateEUR;  // token to EUR exchange rate
     }
     
-    Token[] tokens;
+    TokenExchange[] exchangableTokens;
+    
+    uint256 lastExchangableTokenId = 0;  // the last exchangable token ID
 	
-    mapping(address => uint256) tokenIds;  // mapping of the token address to the token array index
+    mapping(address => uint256) exchangableTokenIds;  // mapping of the token address to the token array index
 
+
+	/*
+	 *  Authorised oracle address
+	 *  Assume we can 100% trust Oracle,
+	 *  Assume also Oracle calls back to set exchange rates while the contract is constructed.
+	 */
+    address oracle;
+    
 	
     /** Constructors */
 	
-    function Payroll(address _oracle) public {
+    function Payroll(address _oracle, address _tokenEUR) public {
         owner = msg.sender;
         oracle = _oracle;
-    }
-    
-	
-    /** Modifiers */
+        tokenEUR = _tokenEUR;
+        
+        uint256 exchangableTokenId = lastExchangableTokenId++;
+        
+        exchangableTokens[exchangableTokenId] = TokenExchange(
+            tokenEUR,
+            1  // EUR to EUR exchange rate
+        );
 
-    modifier ifOwner() {
-    	require(msg.sender == owner);
-    	_;
-    }
-    
-    modifier ifEemployee() {
-    	require(employeeIds[msg.sender] > 0);
-    	_;
-    }
-    
-    modifier ifOracle() {
-    	require(msg.sender == oracle);
-    	_;
+        exchangableTokenIds[tokenEUR] = exchangableTokenId;
     }
     
 
@@ -74,25 +81,40 @@ contract Payroll is PayrollInterface {
         address[] allowedTokens, 
         uint256 initialYearlyEURSalary
     ) public ifOwner returns(uint256 employeeId) {
-        require(initialYearlyUSDSalary > 0);
-	
-	// validate all the tokens are allowed
-		
-        for (uint i = 0; i < allowedTokens.length; i++) {
-            require(tokenIds[allowedTokens[i]] > 0);
-        }
+
+        require(
+            initialYearlyEURSalary > 0 &&
+            accountAddress != address(0) &&
+            employeeIds[accountAddress] == 0  // not an existing employee 
+        );
         
         // now add the new employee
         
-    	uint256 employeeId = lastEmployeeId++;
+    	employeeId = lastEmployeeId++;
     	employeeCount++;
-        
-        employees[employeeId] = Employee(
-            accountAddress,
-            allowedTokens,
-            0,
-            initialYearlyEURSalary
-        );
+
+        address[] memory distributionTokenList = new address[](1);
+        distributionTokenList[0] = tokenEUR;
+
+        uint256[] memory distributionInPercentageList = new uint256[](1);
+        distributionInPercentageList[0] = 100;
+
+        employees[employeeId] = Employee({
+            accountAddress: accountAddress,
+            active: true,
+            lastAllocationDay: 0,
+            lastPayDay: 0,
+            distributionTokenList: distributionTokenList,
+            distributionInPercentageList: distributionInPercentageList,
+            annualSalaryEUR: initialYearlyEURSalary
+        });
+
+        // validate all the tokens are exchangable before adding to the mapping
+
+        for (uint i = 0; i < allowedTokens.length; i++) {
+            require(exchangableTokenIds[allowedTokens[i]] > 0);
+            employees[employeeId].allowedTokens[allowedTokens[i]] = true;
+        }
 
         employeeIds[accountAddress] = employeeId;
         
@@ -113,7 +135,7 @@ contract Payroll is PayrollInterface {
         uint256 newSalaryEUR
     ) internal {
         Employee storage emp = employees[employeeId];
-        _updateTotalYearlySalaries(emp.annualSalaryEUR, newSalaryEUR);
+        _updateTotalAnnualSalaries(emp.annualSalaryEUR, newSalaryEUR);
         emp.annualSalaryEUR = newSalaryEUR;
     }
 
@@ -128,42 +150,91 @@ contract Payroll is PayrollInterface {
 
     function removeEmployee(uint256 employeeId) public ifOwner {
         Employee storage emp = employees[employeeId];
-        delete employeeIds[emp.accountAddress];
-        delete employees[employeeId];
+        emp.active = false;
+
+        _updateEmployeeSalary(employeeId, 0);
         employeeCount--;
+    }
+
+    function addFunds() payable public returns(string) {
+        LogFundsAdded(msg.value);
+    	return "OK";
+    }
+    
+    function getEmployeeCount() public constant returns(uint256) {
+    	return employeeCount;
+    }
+
+    function getEmployee(uint256 employeeId) public constant
+    	returns(address accountAddress, bool active, uint256 lastAllocationDay, uint256 annualSalaryEUR, uint256 lastPayDay) {
+		
+		Employee storage emp = employees[employeeId];
+        
+        accountAddress = emp.accountAddress;
+        active = emp.active;
+        lastAllocationDay = emp.lastAllocationDay;
+        annualSalaryEUR = emp.annualSalaryEUR;
+        lastPayDay = emp.lastPayDay;
+	}
+    
+    // Monthly EUR amount spent in salaries
+    function calculatePayrollBurnrate() public constant returns(uint256) {
+     	return totalAnnualSalariesEUR / 12;
     }
 
 
 
-
-
-
-    function addFunds() payable; 
+    
+    // Days until the contract can run out of funds 
+    function calculatePayrollRunway() public constant returns(uint256) {
+        // TODO
+    }
     
 
-
-    function getEmployeeCount() constant returns (uint256);
-
-    function getEmployee(uint256 employeeId) constant returns (address employee); // Return all important info too 
-    
-    function calculatePayrollBurnrate() constant returns (uint256); // Monthly EUR amount spent in salaries 
-    
-    function calculatePayrollRunway() constant returns (uint256); // Days until the contract can run out of funds 
-    
     /* EMPLOYEE ONLY */ 
     
     function determineAllocation(
         address[] tokens, 
         uint256[] distribution
-    ); // only callable once every 6 months 
+    ) public {
+        // TODO
+    }
 
-    function payday(); // only callable once a month
+    function payday() public {
+        // TODO
+    }
+
 
     /* ORACLE ONLY */ 
     
+    // uses decimals from token
     function setExchangeRate(
       address token, 
-      uint256 EURExchangeRate
-    ); // uses decimals from token
+      uint256 exchangeRateEUR
+    ) public ifOracle {
+        // TODO
+    }
+
+
+    /** Modifiers */
+
+    modifier ifOwner() {
+    	require(msg.sender == owner);
+    	_;
+    }
+    
+    modifier ifActiveEmployee() {
+    	require(employees[employeeIds[msg.sender]].active);
+    	_;
+    }
+    
+    modifier ifOracle() {
+    	require(msg.sender == oracle);
+    	_;
+    }
+
+
+    /** events */
+    event LogFundsAdded(uint256 amount);
 
 }

@@ -1,6 +1,7 @@
 pragma solidity ^0.4.17;
 
-// Assume we can 100% trust the exchange rate oracle returns
+// For the sake of simplicity lets assume EUR is a ERC20 token 
+// Also lets assume we can 100% trust the exchange rate from oracle
 
 contract PayrollInterface {
 
@@ -25,7 +26,7 @@ contract PayrollInterface {
     function getEmployeeCount() public constant returns(uint256);
 
     function getEmployee(uint256 employeeId) public constant
-    	returns(address accountAddress, address[] allowedTokens, uint256 annualSalaryEUR, uint256 lastPayDay); 
+    	returns(address accountAddress, bool active, uint256 lastAllocationDay, uint256 annualSalaryEUR, uint256 lastPayDay); 
     
     function calculatePayrollBurnrate() public constant returns(uint256); // Monthly EUR amount spent in salaries 
     
