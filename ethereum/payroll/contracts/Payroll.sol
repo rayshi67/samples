@@ -204,9 +204,9 @@ contract Payroll is PayrollInterface {
             return uint256(-1);
         }
 
-      uint256 balanceEUR = this.balance / exchangableTokens[exchangableTokenIds[tokenETH]].exchangeRateEUR;
+        uint256 balanceEUR = this.balance / exchangableTokens[exchangableTokenIds[tokenETH]].exchangeRateEUR;
 
-      return balanceEUR / dailyBurnRateEUR;
+        return balanceEUR / dailyBurnRateEUR;
     }
     
 
