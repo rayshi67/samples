@@ -39,12 +39,15 @@ contract Payroll is PayrollInterface {
         
     /** Tokens */
 	
+    // Assume we can get their ETH/EUR exchange rates via ETH token address.
+    address tokenETH;
+
 	// For the sake of simplicity lets assume EUR is a ERC20 token 
 	address tokenEUR;
 	
     struct TokenExchange {
         address token;  // ERC20 token address
-        uint256 exchangeRateEUR;  // token to EUR exchange rate
+        uint256 exchangeRateEUR;  // EUR to token exchange rate
     }
     
     TokenExchange[] exchangableTokens;
@@ -68,10 +71,11 @@ contract Payroll is PayrollInterface {
 	
     /** Constructors */
 	
-    function Payroll(address _oracle, address _tokenEUR) public {
+    function Payroll(address _oracle, address _tokenEUR, address _tokenETH) public {
         owner = msg.sender;
         oracle = _oracle;
         tokenEUR = _tokenEUR;
+        tokenETH = _tokenETH;
         
         uint256 exchangableTokenId = lastExchangableTokenId++;
         
@@ -192,9 +196,17 @@ contract Payroll is PayrollInterface {
      	return totalAnnualSalariesEUR / 12;
     }
     
-    // Days until the contract can run out of funds 
+    // Days until the contract can run out of funds, or -1 if there is no burn rate.
     function calculatePayrollRunway() public constant ifOwner returns(uint256) {
-        // TODO
+        uint256 dailyBurnRateEUR = totalAnnualSalariesEUR / 365;
+
+        if (dailyBurnRateEUR == 0) {
+            return uint256(-1);
+        }
+
+      uint256 balanceEUR = this.balance / exchangableTokens[exchangableTokenIds[tokenETH]].exchangeRateEUR;
+
+      return balanceEUR / dailyBurnRateEUR;
     }
     
 
