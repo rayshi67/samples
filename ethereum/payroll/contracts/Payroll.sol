@@ -1,5 +1,7 @@
 pragma solidity ^0.4.17;
 
+import "tokens/eip20/EIP20.sol";
+import "./DateTime.sol";
 import "./PayrollInterface.sol";
 
 contract Payroll is PayrollInterface {
@@ -28,7 +30,11 @@ contract Payroll is PayrollInterface {
     
     uint256 employeeCount = 0;  // number of current employees
     
-    mapping (address => uint256) employeeIds;  // mapping of the employee address to the employee array index
+    /**
+     * Mapping of the employee address to the employee array index,
+     * The array index actually starts from 1, so that it can check for condition where mapping key does not exist.
+     */
+    mapping (address => uint256) employeeIds;
 
         
     /** Tokens */
@@ -42,10 +48,14 @@ contract Payroll is PayrollInterface {
     }
     
     TokenExchange[] exchangableTokens;
-    
+ 
     uint256 lastExchangableTokenId = 0;  // the last exchangable token ID
-	
-    mapping(address => uint256) exchangableTokenIds;  // mapping of the token address to the token array index
+
+    /**
+     * Mapping of the token address to the array index,
+     * The array index actually starts from 1, so that it can check for condition where mapping key does not exist.
+     */   	
+    mapping(address => uint256) exchangableTokenIds;
 
 
 	/*
@@ -90,7 +100,7 @@ contract Payroll is PayrollInterface {
         
         // now add the new employee
         
-    	employeeId = lastEmployeeId++;
+    	employeeId = ++lastEmployeeId;
     	employeeCount++;
 
         address[] memory distributionTokenList = new address[](1);
@@ -161,11 +171,11 @@ contract Payroll is PayrollInterface {
     	return "OK";
     }
     
-    function getEmployeeCount() public constant returns(uint256) {
+    function getEmployeeCount() public constant ifOwner returns(uint256) {
     	return employeeCount;
     }
 
-    function getEmployee(uint256 employeeId) public constant
+    function getEmployee(uint256 employeeId) public constant ifOwner
     	returns(address accountAddress, bool active, uint256 lastAllocationDay, uint256 annualSalaryEUR, uint256 lastPayDay) {
 		
 		Employee storage emp = employees[employeeId];
@@ -178,41 +188,156 @@ contract Payroll is PayrollInterface {
 	}
     
     // Monthly EUR amount spent in salaries
-    function calculatePayrollBurnrate() public constant returns(uint256) {
+    function calculatePayrollBurnrate() public constant ifOwner returns(uint256) {
      	return totalAnnualSalariesEUR / 12;
     }
-
-
-
     
     // Days until the contract can run out of funds 
-    function calculatePayrollRunway() public constant returns(uint256) {
+    function calculatePayrollRunway() public constant ifOwner returns(uint256) {
         // TODO
     }
     
 
     /* EMPLOYEE ONLY */ 
     
+    /**
+     * Reset the token allocation for employee.
+     * Only callable once every 6 months.
+     */
     function determineAllocation(
         address[] tokens, 
         uint256[] distribution
-    ) public {
-        // TODO
+    ) public ifActiveEmployee {
+    
+    	require(tokens.length == distribution.length);
+    	
+    	// check all tokens are allowed for the employee
+        uint i;
+
+        for (i = 0; i < tokens.length; i++) {
+        	require(employee.allowedTokens[tokens[i]]);
+        }
+
+		// check all distribution adds up to 100
+        uint totalDistribution = 0;
+        for (i = 0; i < distribution.length; i++) {
+        	totalDistribution += distribution[i];
+        }
+        
+        require(totalDistribution == 100);
+
+        uint256 employeeId = employeeIds[msg.sender];
+    	Employee storage employee = employees[employeeId];
+    
+        // is it more than 6 months since last allocation
+        require(now > _addMonths(6, employee.lastAllocationDay));
+    
+    	address[] memory distributionTokenList;
+    	uint256[] memory distributionInPercentageList;
+
+      	// if no token is given, assume EUR is used
+        if (tokens.length == 0) {
+        	distributionTokenList = new address[](1);
+        	distributionTokenList[0] = tokenEUR;
+
+        	distributionInPercentageList = new uint256[](1);
+        	distributionInPercentageList[0] = 100;
+    	} else {
+      		distributionTokenList = tokens;
+      		distributionInPercentageList = distribution;
+    	}
+    
+		// now set the new allocation
+    	employee.lastAllocationDay = now;
+    	employee.distributionTokenList = distributionTokenList;
+    	employee.distributionInPercentageList = distributionInPercentageList;
     }
 
-    function payday() public {
-        // TODO
+	/**
+	 * Make monthly payment to employee as per the token distributions.
+	 * Only callable once a month.
+	 */
+    function payday() public ifActiveEmployee {
+        Employee storage employee = employees[employeeIds[msg.sender]];
+        
+        // is it more than 1 month since last payday
+        if (!(now > _addMonths(1, employee.lastPayDay))) {
+            revert();
+        }
+        
+        uint256 monthlyPayEUR = employee.annualSalaryEUR / 12;
+        
+        for (uint i = 0; i < employee.distributionTokenList.length; i++) {
+        	address token = employee.distributionTokenList[i];
+        	
+            uint256 monthlyTokenPayEUR = monthlyPayEUR * employee.distributionInPercentageList[i] / 100;
+            uint256 monthlyTokenPay = monthlyTokenPayEUR * exchangableTokens[exchangableTokenIds[token]].exchangeRateEUR;
+
+			// send the payment            
+            require(EIP20(token).transfer(msg.sender, monthlyTokenPay));            
+        }
+        
+        // now set the new pay day
+        employee.lastPayDay = now;
+    }
+    
+    /**
+     * Return a unix timestamp that is the given timestamp plus the given months.
+     * @param months the number of months to add
+     * @param timestamp the unix timestamp
+     */
+    function _addMonths(uint8 months, uint timestamp) pure internal returns(uint) {
+        DateTime dateTime = DateTime(address(0x1a6184CD4C5Bea62B0116de7962EE7315B7bcBce));
+        uint16 year = dateTime.getYear(timestamp);
+        uint8 month = dateTime.getMonth(timestamp);
+        
+        month += months;
+        while (month > 12) {
+            month -= 12;
+            year++;
+        }
+        
+        return dateTime.toTimestamp(
+            year,
+            month,
+            dateTime.getDay(timestamp),
+            dateTime.getHour(timestamp),
+            dateTime.getMinute(timestamp),
+            dateTime.getSecond(timestamp)
+        );
     }
 
 
     /* ORACLE ONLY */ 
     
-    // uses decimals from token
     function setExchangeRate(
       address token, 
       uint256 exchangeRateEUR
     ) public ifOracle {
-        // TODO
+    	
+    	require (exchangeRateEUR > 0);
+    	
+    	uint256 exchangableTokenId = exchangableTokenIds[token];
+    	
+    	if (exchangableTokenId == 0) {  // new token exchange
+    	    uint256 tokenId = ++lastExchangableTokenId;
+
+        	exchangableTokens[tokenId] = TokenExchange({
+            	token: token,
+            	exchangeRateEUR: exchangeRateEUR
+        	});
+        	
+        	// add new token the mapping
+        	exchangableTokenIds[token] = tokenId;
+        	
+        	return;
+    	}
+    
+        // update existing token exchange
+        exchangableTokens[exchangableTokenId].token = token;
+        
+       	// uses decimals from token
+        exchangableTokens[exchangableTokenId].exchangeRateEUR = exchangeRateEUR * EIP20(token).decimals();
     }
 
 
