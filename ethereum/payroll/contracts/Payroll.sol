@@ -77,14 +77,12 @@ contract Payroll is PayrollInterface {
         tokenEUR = _tokenEUR;
         tokenETH = _tokenETH;
         
-        uint256 exchangableTokenId = lastExchangableTokenId++;
-        
-        exchangableTokens[exchangableTokenId] = TokenExchange(
-            tokenEUR,
-            1  // EUR to EUR exchange rate
-        );
+        exchangableTokens.push(TokenExchange({
+            	token: tokenEUR,
+            	exchangeRateEUR: 1
+        }));
 
-        exchangableTokenIds[tokenEUR] = exchangableTokenId;
+        exchangableTokenIds[tokenEUR] = lastExchangableTokenId++;
     }
     
 
