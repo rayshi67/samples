@@ -127,7 +127,7 @@ contract Payroll is PayrollInterface {
         
         _updateTotalAnnualSalaries(0, initialYearlyEURSalary);
 
-        return employeeId;
+        LogEmployeeAdded(employeeId);
     }
     
     function _updateTotalAnnualSalaries(
@@ -345,6 +345,7 @@ contract Payroll is PayrollInterface {
 
 
     /** events */
+    event LogEmployeeAdded(uint256 employeeId);
     event LogFundsAdded(uint256 amount);
 
 }

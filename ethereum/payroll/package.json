@@ -7,7 +7,7 @@
     "compile": "truffle compile",
     "lint": "solium -d contracts/",
     "migrate": "truffle migrate",
-    "test": "./test.sh"
+    "test": "truffle test"
   },
   "author": "Ray Shi",
   "license": "MIT",

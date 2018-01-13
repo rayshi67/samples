@@ -43,7 +43,7 @@ contract("Payroll", (accounts) => {
         const burnRate = await payroll.calculatePayrollBurnrate();
         assert.equal(burnRate, 0);
     });
-
+    
     it("should have an endless runway on creation", async () => {
         const END_OF_TIME = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
         const runway = await payroll.calculatePayrollRunway();
@@ -69,6 +69,30 @@ contract("Payroll", (accounts) => {
             assertJump(error);
         }
     });
+
+    it("should get an employee", async () => {
+      const SALARY = 150000;
+      await payroll.addEmployee(EMPLOYEE_1, [], SALARY);
+  
+      const [account, active, lastAllocationDay, annualSalary, lastPayDay] = await payroll.getEmployee(0);
+      assert.equal(account, EMPLOYEE_1);
+      assert.isTrue(active);
+      assert.equal(lastPayDay, 0);
+      assert.equal(lastAllocationDay, 0);
+      assert.equal(annualSalary, SALARY);
+    });
+ 
+    it("should get a removed employee", async () => {
+        const SALARY = 150000;
+        await payroll.addEmployee(EMPLOYEE_1, [], SALARY);
+        await payroll.removeEmployee(0);
+        const [account, active, lastAllocationDay, annualSalary, lastPayDay] = await payroll.getEmployee(0);
+        assert.equal(account, EMPLOYEE_1);
+        assert.isFalse(active);
+        assert.equal(lastPayDay, 0);
+        assert.equal(lastAllocationDay, 0);
+        assert.equal(annualSalary, SALARY);
+      });
 
 });
 
