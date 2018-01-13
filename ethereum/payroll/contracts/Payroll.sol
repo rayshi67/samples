@@ -31,8 +31,7 @@ contract Payroll is PayrollInterface {
     uint256 employeeCount = 0;  // number of current employees
     
     /**
-     * Mapping of the employee address to the employee array index,
-     * The array index actually starts from 1, so that it can check for condition where mapping key does not exist.
+     * Mapping of the employee address to the employee array index
      */
     mapping (address => uint256) employeeIds;
 
@@ -44,22 +43,11 @@ contract Payroll is PayrollInterface {
 
 	// For the sake of simplicity lets assume EUR is a ERC20 token 
 	address tokenEUR;
-	
-    struct TokenExchange {
-        address token;  // ERC20 token address
-        uint256 exchangeRateEUR;  // EUR to token exchange rate
-    }
-    
-    TokenExchange[] exchangableTokens;
- 
-    uint256 lastExchangableTokenId = 0;  // the last exchangable token ID
 
     /**
-     * Mapping of the token address to the array index,
-     * The array index actually starts from 1, so that it can check for condition where mapping key does not exist.
+     * Mapping of the token address to the exchange rate
      */   	
-    mapping(address => uint256) exchangableTokenIds;
-
+    mapping(address => uint256) exchangableTokens;
 
 	/*
 	 *  Authorised oracle address
@@ -76,17 +64,26 @@ contract Payroll is PayrollInterface {
         oracle = _oracle;
         tokenEUR = _tokenEUR;
         tokenETH = _tokenETH;
-        
-        exchangableTokens.push(TokenExchange({
-            	token: tokenEUR,
-            	exchangeRateEUR: 1
-        }));
 
-        exchangableTokenIds[tokenEUR] = lastExchangableTokenId++;
+        exchangableTokens[tokenEUR] = 1;
     }
     
 
     /* OWNER ONLY */
+
+    function _employeeExists(address accountAddress) internal view returns (bool) {
+        if (employees.length < 1) {
+            return false;
+        }
+
+        for (uint i = 0; i < employees.length; i++) {
+            if (employees[i].accountAddress == accountAddress) {  // found
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     function addEmployee(
         address accountAddress, 
@@ -94,16 +91,11 @@ contract Payroll is PayrollInterface {
         uint256 initialYearlyEURSalary
     ) public ifOwner returns(uint256 employeeId) {
 
-        require(
-            initialYearlyEURSalary > 0 &&
-            accountAddress != address(0) &&
-            employeeIds[accountAddress] == 0  // not an existing employee 
-        );
+        require(initialYearlyEURSalary > 0);
+        require(accountAddress != address(0));
+        require(!_employeeExists(accountAddress));
         
         // now add the new employee
-        
-    	employeeId = ++lastEmployeeId;
-    	employeeCount++;
 
         address[] memory distributionTokenList = new address[](1);
         distributionTokenList[0] = tokenEUR;
@@ -111,7 +103,7 @@ contract Payroll is PayrollInterface {
         uint256[] memory distributionInPercentageList = new uint256[](1);
         distributionInPercentageList[0] = 100;
 
-        employees[employeeId] = Employee({
+        employees.push(Employee({
             accountAddress: accountAddress,
             active: true,
             lastAllocationDay: 0,
@@ -119,12 +111,15 @@ contract Payroll is PayrollInterface {
             distributionTokenList: distributionTokenList,
             distributionInPercentageList: distributionInPercentageList,
             annualSalaryEUR: initialYearlyEURSalary
-        });
+        }));
+
+    	employeeId = lastEmployeeId++;
+    	employeeCount++;
 
         // validate all the tokens are exchangable before adding to the mapping
 
         for (uint i = 0; i < allowedTokens.length; i++) {
-            require(exchangableTokenIds[allowedTokens[i]] > 0);
+            require(exchangableTokens[allowedTokens[i]] > 0);
             employees[employeeId].allowedTokens[allowedTokens[i]] = true;
         }
 
@@ -202,7 +197,7 @@ contract Payroll is PayrollInterface {
             return uint256(-1);
         }
 
-        uint256 balanceEUR = this.balance / exchangableTokens[exchangableTokenIds[tokenETH]].exchangeRateEUR;
+        uint256 balanceEUR = this.balance * exchangableTokens[tokenETH];
 
         return balanceEUR / dailyBurnRateEUR;
     }
@@ -281,7 +276,7 @@ contract Payroll is PayrollInterface {
         	address token = employee.distributionTokenList[i];
         	
             uint256 monthlyTokenPayEUR = monthlyPayEUR * employee.distributionInPercentageList[i] / 100;
-            uint256 monthlyTokenPay = monthlyTokenPayEUR * exchangableTokens[exchangableTokenIds[token]].exchangeRateEUR;
+            uint256 monthlyTokenPay = monthlyTokenPayEUR / exchangableTokens[token];
 
 			// send the payment            
             require(EIP20(token).transfer(msg.sender, monthlyTokenPay));            
@@ -327,27 +322,7 @@ contract Payroll is PayrollInterface {
     	
     	require (exchangeRateEUR > 0);
     	
-    	uint256 exchangableTokenId = exchangableTokenIds[token];
-    	
-    	if (exchangableTokenId == 0) {  // new token exchange
-    	    uint256 tokenId = ++lastExchangableTokenId;
-
-        	exchangableTokens[tokenId] = TokenExchange({
-            	token: token,
-            	exchangeRateEUR: exchangeRateEUR
-        	});
-        	
-        	// add new token the mapping
-        	exchangableTokenIds[token] = tokenId;
-        	
-        	return;
-    	}
-    
-        // update existing token exchange
-        exchangableTokens[exchangableTokenId].token = token;
-        
-       	// uses decimals from token
-        exchangableTokens[exchangableTokenId].exchangeRateEUR = exchangeRateEUR * EIP20(token).decimals();
+        exchangableTokens[token] = exchangeRateEUR /** TODO EIP20(token).decimals() */;
     }
 
 
